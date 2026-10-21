@@ -124,12 +124,15 @@ try{const saved=localStorage.getItem('solid3d.filamentPalette');if(filamentPalet
 renderFilamentPalette();
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x263747);const camera=new THREE.PerspectiveCamera(45,1,.1,5000);camera.position.set(270,220,275);
 const renderer=new THREE.WebGLRenderer({canvas:$('scene'),antialias:true,powerPreference:'low-power'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));scene.add(new THREE.HemisphereLight(0xffffff,0x53677c,2.4));const lamp=new THREE.DirectionalLight(0xffffff,1.7);lamp.position.set(120,250,160);scene.add(lamp);
-const grid=new THREE.GridHelper(256,16,0x7897b0,0x4d6274);scene.add(grid);const bed=new THREE.Mesh(new THREE.PlaneGeometry(256,256),new THREE.MeshBasicMaterial({color:0x183043,side:THREE.DoubleSide,transparent:true,opacity:.18}));bed.rotation.x=-Math.PI/2;bed.position.y=-.1;scene.add(bed);
+let grid=new THREE.GridHelper(256,16,0x7897b0,0x4d6274);scene.add(grid);const bed=new THREE.Mesh(new THREE.PlaneGeometry(256,256),new THREE.MeshBasicMaterial({color:0x183043,side:THREE.DoubleSide,transparent:true,opacity:.18}));bed.rotation.x=-Math.PI/2;bed.position.y=-.1;scene.add(bed);
 function updateViewportAppearance(){
 const requested=$('viewportTheme').value,mode=requested==='auto'?$('uiTheme').value:requested;
 const styles={dark:{bg:0x263747,gridMajor:0x7897b0,gridMinor:0x4d6274,bed:0x183043},light:{bg:0xe6e8eb,gridMajor:0x8699a8,gridMinor:0xb9c3cb,bed:0xd2d9df},gray:{bg:0x92969c,gridMajor:0x525d66,gridMinor:0x777f86,bed:0x777f86}};
 const colors=styles[mode]||styles.dark;scene.background.setHex(colors.bg);
-const arr=grid.geometry.attributes.color;if(arr){const major=new THREE.Color(colors.gridMajor),minor=new THREE.Color(colors.gridMinor);for(let i=0;i<arr.count;i++){const c=(i<4||i===16||i===17||i===18||i===19)?major:minor;arr.setXYZ(i,c.r,c.g,c.b)}arr.needsUpdate=true}
+// Rebuild the grid using Three.js's supported constructor rather than mutating vertex colors.
+const replacement=new THREE.GridHelper(256,16,colors.gridMajor,colors.gridMinor);
+replacement.position.copy(grid.position);
+scene.remove(grid);grid.geometry.dispose();grid.material.dispose();grid=replacement;scene.add(grid);
 bed.material.color.setHex(colors.bed);bed.material.opacity=mode==='light'?.12:.18;
 }
 try{const value=localStorage.getItem('solid3d.viewport');$('viewportTheme').value=['auto','dark','light','gray'].includes(value)?value:'auto'}catch(e){$('viewportTheme').value='auto'}
