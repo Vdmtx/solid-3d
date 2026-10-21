@@ -130,9 +130,21 @@ const requested=$('viewportTheme').value,mode=requested==='auto'?$('uiTheme').va
 const styles={dark:{bg:0x263747,gridMajor:0x7897b0,gridMinor:0x4d6274,bed:0x183043},light:{bg:0xe6e8eb,gridMajor:0x8699a8,gridMinor:0xb9c3cb,bed:0xd2d9df},gray:{bg:0x92969c,gridMajor:0x525d66,gridMinor:0x777f86,bed:0x777f86}};
 const colors=styles[mode]||styles.dark;scene.background.setHex(colors.bg);
 // Rebuild the grid using Three.js's supported constructor rather than mutating vertex colors.
-const replacement=new THREE.GridHelper(256,16,colors.gridMajor,colors.gridMinor);
-replacement.position.copy(grid.position);
-scene.remove(grid);grid.geometry.dispose();grid.material.dispose();grid=replacement;scene.add(grid);
+// A fixed-height, high-contrast modeling bed grid independent of GridHelper internals.
+const vertices=[],vertexColors=[];
+const major=new THREE.Color(colors.gridMajor),minor=new THREE.Color(colors.gridMinor);
+for(let n=0;n<=16;n++){
+const p=-128+n*16,primary=n===0||n===8||n===16,c=primary?major:minor;
+vertices.push(-128,.24,p,128,.24,p,p,.24,-128,p,.24,128);
+for(let j=0;j<4;j++)vertexColors.push(c.r,c.g,c.b);
+}
+const geometry=new THREE.BufferGeometry();
+geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+geometry.setAttribute('color',new THREE.Float32BufferAttribute(vertexColors,3));
+const replacement=new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({vertexColors:true,depthTest:false,depthWrite:false,transparent:false}));
+replacement.renderOrder=2;replacement.frustumCulled=false;
+scene.remove(grid);grid.geometry.dispose();if(Array.isArray(grid.material))grid.material.forEach(m=>m.dispose());else grid.material.dispose();
+grid=replacement;scene.add(grid);
 bed.material.color.setHex(colors.bed);bed.material.opacity=mode==='light'?.12:.18;
 }
 try{const value=localStorage.getItem('solid3d.viewport');$('viewportTheme').value=['auto','dark','light','gray'].includes(value)?value:'auto'}catch(e){$('viewportTheme').value='auto'}
