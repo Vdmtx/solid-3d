@@ -244,7 +244,7 @@ if(!o||idx<0){setStatus('Selecione uma face com a ferramenta Selecionar face ant
 if(d.kind!=='rect'||d.edge>0||d.cavity){setStatus('Nesta etapa, a extrusão adicional é compatível com faces planas de caixas sem acabamento.');return}
 if(!Number.isFinite(amount)||amount<.1||amount>256){setStatus('Informe uma extrusão entre 0,1 e 256 mm.');return}
 if(idx<0||idx>5){setStatus('Selecione uma das seis faces planas da caixa.');return}
-const w=d.w,h=d.h,depth=d.d,dim=[amount,amount,0,0,w,w],height=[h,h,amount,amount,h,h],zdim=[depth,depth,depth,depth,amount,amount];
+const w=d.w,h=d.h,depth=d.d,dim=[amount,amount,w,w,w,w],height=[h,h,amount,amount,h,h],zdim=[depth,depth,depth,depth,amount,amount];
 const direction=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]][idx];
 const cx=o.position.x+direction[0]*(w/2+amount/2),cy=o.position.y+direction[1]*(h/2+amount/2),cz=o.position.z+direction[2]*(depth/2+amount/2);
 const ext=new THREE.Mesh(new THREE.BoxGeometry(dim[idx],height[idx],zdim[idx]),new THREE.MeshStandardMaterial());
