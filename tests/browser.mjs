@@ -3,6 +3,21 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 const pageHtml=readFileSync(new URL('../index.html',import.meta.url));
+function inspectStlTopology(buf){
+const count=buf.readUInt32LE(80),edges=new Map();let degenerate=0;
+const key=p=>p.map(n=>Math.round(n*1000)).join(',');
+for(let i=0;i<count;i++){
+const off=84+i*50,v=[];
+for(let j=0;j<3;j++)v.push([buf.readFloatLE(off+12+j*12),buf.readFloatLE(off+16+j*12),buf.readFloatLE(off+20+j*12)]);
+const a=v[0],b=v[1],c=v[2],u=b.map((n,k)=>n-a[k]),w=c.map((n,k)=>n-a[k]);
+const cross=[u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];
+if(Math.hypot(...cross)<1e-6)degenerate++;
+for(const [x,y] of [[0,1],[1,2],[2,0]]){const p=[key(v[x]),key(v[y])].sort().join(' ~ ');edges.set(p,(edges.get(p)||0)+1)}
+}
+const unpaired=[...edges.values()].filter(n=>n!==2);
+return {triangles:count,unpairedEdges:unpaired.length,degenerateTriangles:degenerate};
+}
+
 const server=createServer((req,res)=>{if(new URL(req.url,'http://localhost').pathname!=='/'){res.writeHead(404);res.end();return}res.writeHead(200,{'Content-Type':'text/html;charset=utf-8'});res.end(pageHtml)});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port+'/';
@@ -66,7 +81,7 @@ const stl=readFileSync(await download.path());
 const triangles=stl.readUInt32LE(80);
 assert.ok(triangles>0,'STL sem triangulos');
 assert.equal(stl.length,84+triangles*50,'STL binario inconsistente');
-console.log('PASS binary STL structure, triangles:',triangles);
+console.log('PASS binary STL structure, triangles:',triangles);console.log('STL TOPOLOGY full-face CSG:',inspectStlTopology(stl));
 
 
 // Validate that derived meshes remain editable after reopening.
@@ -99,6 +114,8 @@ const area=await page.locator('#scene').boundingBox(),mx=area.x+area.width*.5,my
 await page.mouse.move(mx-45,my);await page.mouse.down();await page.mouse.move(mx+45,my,{steps:10});await page.mouse.up();
 assert.equal(await page.locator('#objectList option').count(),2,'Primeiro corte de face falhou');
 console.log('PASS primeira subdivisao da face superior');
+let topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY subdivided pieces:',inspectStlTopology(readFileSync(await topoDownload.path())));
 let secondCut=false;
 for(const oy of [-24,24]){
 await page.mouse.move(mx-38,my+oy);await page.mouse.down();await page.mouse.move(mx+38,my+oy,{steps:8});await page.mouse.up();
@@ -144,7 +161,9 @@ await page.locator('#'+button).click();
 const result=await page.locator('#status').innerText();
 assert.match(result,/Operação concluída/,label+': '+result);
 assert.equal(await page.locator('#objectList option').count(),1);
-console.log('PASS Boolean:',label)
+console.log('PASS Boolean:',label);
+topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY '+label+':',inspectStlTopology(readFileSync(await topoDownload.path())))
 }
 
 
@@ -186,7 +205,7 @@ assert.equal(await page.locator('#objectList option').count(),1,'Primitive '+sha
 download=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
 const buf=readFileSync(await download.path());
 assert.ok(buf.readUInt32LE(80)>0,'Primitive STL vazio: '+shape);
-console.log('PASS primitive and binary STL:',shape)
+console.log('PASS primitive and binary STL:',shape);console.log('STL TOPOLOGY '+shape+':',inspectStlTopology(buf))
 }
 await clearScene();
 await page.locator('#textValue').fill('SOLID');
