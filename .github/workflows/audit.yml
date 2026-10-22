@@ -14,3 +14,11 @@ jobs:
           node-version: '22'
       - name: Validar sintaxe, controles e regressoes conhecidas
         run: node tests/check.mjs
+      - name: Instalar navegador de testes (sem alterar dependencias do site)
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+        timeout-minutes: 8
+      - name: Testar interface e modelagem em Chromium
+        run: node tests/browser.mjs
+        timeout-minutes: 4
