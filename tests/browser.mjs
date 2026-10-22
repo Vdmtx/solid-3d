@@ -273,7 +273,7 @@ await page.locator('#cylinder').click();
 await page.locator('#toggleTools').click();
 await page.locator('[data-view="iso"]').click();
 await page.locator('#toggleTools').click();
-await page.locator('[data-tool="split"]').click();
+await page.locator('[data-tool="split"]').last().click();
 const cutRect=await page.locator('#scene').boundingBox();
 const pX=cutRect.x+cutRect.width*.5,pY=cutRect.y+cutRect.height*.5;
 await page.mouse.move(pX-90,pY);await page.mouse.down();await page.mouse.move(pX+90,pY,{steps:14});await page.mouse.up();
