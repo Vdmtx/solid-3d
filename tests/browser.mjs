@@ -270,6 +270,7 @@ console.log('STL TOPOLOGY divided cylinder:',inspectStlTopology(readFileSync(awa
 
 await clearScene();
 await page.locator('#cylinder').click();
+await page.locator('#toggleTools').click();
 await page.locator('[data-view="iso"]').click();
 await page.locator('#toggleTools').click();
 await page.locator('[data-tool="split"]').click();
