@@ -142,6 +142,9 @@ await page.locator('#file').setInputFiles({name:'sloped.json',mimeType:'applicat
 await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Projeto aberto'),null,{timeout:10000});
 assert.equal(await page.locator('#objectList option').count(),1);
 console.log('PASS vertex displacement and JSON restoration');
+topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY sloped vertex:',inspectStlTopology(readFileSync(await topoDownload.path())));
+
 
 for(const [button,label] of [['booleanUnion','Soldar'],['booleanSubtract','Aparar'],['booleanIntersect','Interseção']]){
 await clearScene();
@@ -181,6 +184,9 @@ await page.locator('#edgeSize').fill('2');
 await page.locator('#applyEdge').click();
 assert.match(await page.locator('#status').innerText(),/Acabamento geométrico aplicado/);
 console.log('PASS cavity, removal and edge rounding');
+topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY rounded box:',inspectStlTopology(readFileSync(await topoDownload.path())));
+
 await page.locator('[data-activate-tool="face"]').click();
 await page.mouse.click(mx,my);
 assert.match(await page.locator('#faceInfo').innerText(),/selecionada/);
@@ -216,6 +222,9 @@ data=JSON.parse(readFileSync(await download.path(),'utf8'));
 assert.equal(data.objects[0].kind,'text');
 assert.equal(data.objects[0].textValue,'SOLID');
 console.log('PASS editable 3D text creation');
+topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY text:',inspectStlTopology(readFileSync(await topoDownload.path())));
+
 await clearScene();
 await page.locator('#curveStyle').selectOption('smooth');
 await page.locator('[data-activate-tool="bezier"]').click();
@@ -226,6 +235,9 @@ data=JSON.parse(readFileSync(await download.path(),'utf8'));
 assert.equal(data.objects[0].kind,'bezier');
 assert.equal(data.objects[0].curveStyle,'smooth');
 console.log('PASS smooth Bezier profile saved');
+topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY smooth bezier:',inspectStlTopology(readFileSync(await topoDownload.path())));
+
 
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
