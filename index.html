@@ -427,11 +427,65 @@ for(const [id,k] of [['width','w'],['height','h'],['depth','d']])$(id).addEventL
 $('makeCavity').onclick=()=>{if(!chosen)return setStatus('Selecione uma peça.');const d=chosen.userData,t=Number($('wall').value),dep=Number($('cavityDepth').value),maxWall=Math.min(d.w,d.kind==='circle'?d.w:d.d)/2;if(!['rect','circle'].includes(d.kind))return setStatus('Cavidade disponível para caixas e cilindros.');if(!Number.isFinite(t)||t<.4||t>=maxWall||!Number.isFinite(dep)||dep<=0||dep>=d.h)return setStatus('Medidas inválidas: parede de 0,4 mm até menos de metade da largura; profundidade menor que a altura.');history();d.cavity={wall:t,depth:dep};resizeObj(chosen);setStatus('Cavidade criada com parede '+t+' mm e profundidade '+dep+' mm; incluída no STL.')};$('removeCavity').onclick=()=>{if(!chosen||!chosen.userData.cavity)return;history();chosen.userData.cavity=null;resizeObj(chosen);setStatus('Peça voltou a ser maciça.')};$('applyEdge').onclick=()=>{if(!chosen){setStatus('Selecione uma peça para aplicar acabamento.');return}const d=chosen.userData,n=Number($('edgeSize').value),limit=Math.min(d.w,d.h,d.kind==='circle'?d.w:d.d)/2-.001;if(d.cavity)return setStatus('Remova a cavidade antes de aplicar arredondamento/chanfro; a combinação ainda não é suportada.');if(['sphere','cone','prism','pyramid','torus','textOutline'].includes(d.kind))return setStatus('Este tipo de peça ainda não possui chanfro/arredondamento geométrico. Use caixa, cilindro, texto 3D ou perfil Bézier.');if(!Number.isFinite(n)||n<0||n>limit){setStatus('Acabamento não aplicado: a peça permite no máximo '+Math.max(0,limit).toFixed(2)+' mm. Reduza a medida ou aumente a espessura do sólido.');$('edgeSize').value=Math.max(0,limit).toFixed(2);$('edgeSize').focus();return}history();d.edge=n;d.edgeType=$('edgeType').value;d.edgeSegments=Math.max(2,Math.min(24,Math.round(Number($('edgeSegments').value)||8)));resizeObj(chosen);setStatus('Acabamento geométrico aplicado: '+d.edgeType+' de '+n.toFixed(2)+' mm. Será incluído no STL.')};
 $('clearEdge').onclick=()=>{if(!chosen)return;history();chosen.userData.edge=0;resizeObj(chosen);setStatus('Acabamento removido.')};
 for(const [id,axis] of [['px','x'],['pz','z']])$(id).addEventListener('change',()=>{if(!chosen)return;history();chosen.position[axis]=Number($(id).value)||0;sync();calc()});$('color').oninput=()=>{if(chosen){history();for(const m of chosen.material)m.color.set($('color').value);chosen.userData.faceColors={}}};$('faceColor').oninput=()=>{if(!chosen||faceIndex<0){setStatus('Primeiro selecione uma face com a ferramenta Selecionar face / pintar.');return}history();const idx=Math.min(faceIndex,chosen.material.length-1);chosen.material[idx].color.set($('faceColor').value);chosen.userData.faceColors[idx]=$('faceColor').value;setStatus('Cor aplicada ao grupo de face '+(idx+1)+'.')};
-$('remove').onclick=()=>{if(!chosen)return;history();const o=chosen;choose(null);pieces=pieces.filter(p=>p!==o);scene.remove(o);o.geometry.dispose();o.material.forEach(m=>m.dispose());refreshObjectList();calc()};$('removeAll').onclick=()=>{if(!pieces.length)return;if(!confirm('Excluir todos os '+pieces.length+' objetos? Esta ação pode ser desfeita.'))return;history();const old=[...pieces];choose(null);pieces=[];for(const o of old){scene.remove(o);o.geometry.dispose();o.material.forEach(m=>m.dispose())}refreshObjectList();calc();setStatus('Todos os objetos foram excluídos. Ctrl+Z para desfazer.')};$('duplicate').onclick=()=>{if(!chosen)return;const d=chosen.userData,o=add(d.kind,d.w,d.h,d.d,chosen.position.x+12,chosen.position.z+12);o.material.forEach((m,i)=>m.color.copy(chosen.material[i].color));o.userData.faceColors={...d.faceColors};o.userData.nodes=d.nodes?d.nodes.map(p=>[...p]):null;o.userData.edge=d.edge||0;o.userData.edgeType=d.edgeType||'round';o.userData.edgeSegments=d.edgeSegments||8;resizeObj(o);sync()};
+$('remove').onclick=()=>{if(!chosen)return;history();const o=chosen;choose(null);pieces=pieces.filter(p=>p!==o);scene.remove(o);o.geometry.dispose();o.material.forEach(m=>m.dispose());refreshObjectList();calc()};$('removeAll').onclick=()=>{if(!pieces.length)return;if(!confirm('Excluir todos os '+pieces.length+' objetos? Esta ação pode ser desfeita.'))return;history();const old=[...pieces];choose(null);pieces=[];for(const o of old){scene.remove(o);o.geometry.dispose();o.material.forEach(m=>m.dispose())}refreshObjectList();calc();setStatus('Todos os objetos foram excluídos. Ctrl+Z para desfazer.')};$('duplicate').onclick=()=>{
+if(!chosen)return;
+const source=chosen,d=source.userData;
+history();
+const wasRestoring=restoring;restoring=true;
+let o;
+try{o=add(d.kind,d.w,d.h,d.d,source.position.x+12,source.position.z+12,d.nodes?structuredClone(d.nodes):null)}finally{restoring=wasRestoring}
+Object.assign(o.userData,structuredClone(d));
+o.userData.name=d.name+' (cópia)';
+delete o.userData.cutGroup;delete o.userData.cutAxis;
+o.material.forEach((m,i)=>m.color.setHex(source.material[i]?.color.getHex()??0x64abdf));
+resizeObj(o);
+o.position.set(source.position.x+12,source.position.y,source.position.z+12);
+choose(o);refreshCutSeams();calc();setStatus('Peça duplicada com geometria, cores e dimensões preservadas.')
+};
 for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{const pos={iso:[270,220,275],top:[0,340,.1],front:[0,90,340],left:[-340,90,0]}[b.dataset.view];camera.position.set(...pos);orbit.target.set(0,18,0);orbit.update()};$('reset').onclick=()=>{camera.position.set(270,220,275);orbit.target.set(0,18,0);orbit.update()};
 function download(name,content,type){const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500)}
-$('save').onclick=()=>download('solid3d.json',JSON.stringify({version:2,objects:pieces.map(o=>({...o.userData,x:o.position.x,z:o.position.z,color:o.material[0].color.getHex()}))},null,2),'application/json');
-$('load').onclick=()=>$('file').click();$('file').onchange=async e=>{try{const json=JSON.parse(await e.target.files[0].text());if(!Array.isArray(json.objects))throw Error('Formato inválido');for(const o of pieces){scene.remove(o);o.geometry.dispose();o.material.forEach(m=>m.dispose())}pieces=[];seq=0;choose(null);for(const d of json.objects){if(!['rect','circle','sphere','cone','torus','prism','pyramid','text','text2d','textOutline','bezier'].includes(d.kind))continue;const o=add(d.kind,Math.max(.2,Number(d.w)),Math.max(.2,Number(d.h)),Math.max(.2,Number(d.d)),Number(d.x)||0,Number(d.z)||0,d.nodes||null);o.material.forEach(m=>m.color.setHex(d.color??0x64abdf));for(const [i,c] of Object.entries(d.faceColors||{})){if(o.material[Number(i)])o.material[Number(i)].color.set(c)}o.userData.faceColors={...d.faceColors};o.userData.edge=Math.max(0,Number(d.edge)||0);o.userData.edgeType=d.edgeType==='chamfer'?'chamfer':'round';o.userData.edgeSegments=Number(d.edgeSegments)||8;o.userData.textValue=d.textValue||'';o.userData.fontName=d.fontName||'helvetiker_regular';loadFont(o.userData.fontName).then(()=>resizeObj(o));o.userData.stroke=d.stroke||1.5;o.userData.cavity=d.cavity||null;resizeObj(o)}choose(null);calc();setStatus('Projeto aberto.')}catch(err){setStatus('Erro ao abrir: '+err.message)}e.target.value=''};
+$('save').onclick=()=>{
+const project={version:3,objects:snapshot(),reference:{data:referenceData||'',width:Number($('imageWidth').value),opacity:Number($('imageOpacity').value),locked:referenceLocked}};
+download('solid3d.json',JSON.stringify(project,null,2),'application/json');
+setStatus('Projeto JSON salvo com sólidos, operações booleanas e imagem de referência.')
+};
+$('load').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+const file=e.target.files?.[0];if(!file)return;
+try{
+const json=JSON.parse(await file.text());
+if(!Array.isArray(json.objects)||json.objects.length>1000)throw Error('Lista de objetos inválida ou excede 1000 peças.');
+const supported=new Set(['rect','circle','sphere','cone','torus','prism','pyramid','text','text2d','textOutline','bezier','csg']);
+const data=json.objects.map((src,i)=>{
+if(!src||!supported.has(src.kind))throw Error('Tipo de objeto não suportado no item '+(i+1)+'.');
+const d=structuredClone(src);
+for(const k of ['w','h','d']){d[k]=Number(d[k]);if(!Number.isFinite(d[k])||d[k]<=0||d[k]>100000)throw Error('Dimensão inválida no objeto '+(i+1)+'.')}
+for(const k of ['x','z']){d[k]=Number(d[k]??0);if(!Number.isFinite(d[k]))throw Error('Posição inválida no objeto '+(i+1)+'.')}
+d.y=Number.isFinite(Number(d.y))&&d.y!==undefined?Number(d.y):d.h/2;
+if(d.kind==='csg'&&(!Array.isArray(d.csgPositions)||d.csgPositions.length<9||d.csgPositions.length%9!==0||d.csgPositions.length>3000000||d.csgPositions.some(n=>!Number.isFinite(n))))throw Error('Malha booleana inválida no objeto '+(i+1)+'.');
+const fallback=Number.isInteger(d.color)?d.color:0x64abdf;
+d.colors=Array.from({length:6},(_,j)=>{
+if(Array.isArray(d.colors)&&Number.isInteger(d.colors[j]))return d.colors[j];
+const value=d.faceColors?.[j];
+if(typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value))return parseInt(value.slice(1),16);
+return fallback
+});
+return d;
+});
+restore(data);
+undoStack=[];redoStack=[];historyButtons();
+if(json.reference?.data&&typeof json.reference.data==='string'&&json.reference.data.startsWith('data:image/')){
+if(Number.isFinite(Number(json.reference.width)))$('imageWidth').value=json.reference.width;
+if(Number.isFinite(Number(json.reference.opacity)))$('imageOpacity').value=json.reference.opacity;
+referenceLocked=json.reference.locked!==false;
+$('lockImage').textContent=referenceLocked?'Imagem bloqueada':'Imagem desbloqueada';
+setReference(json.reference.data)
+}else{clearReference();referenceData=''}
+for(const o of pieces)if(['text','text2d','textOutline'].includes(o.userData.kind))loadFont(o.userData.fontName||'helvetiker_regular').then(font=>{if(font&&pieces.includes(o))resizeObj(o)});
+setStatus('Projeto aberto: '+pieces.length+' objeto(s), incluindo malhas booleanas e deformações.');
+}catch(err){console.error('Abrir JSON:',err);setStatus('Erro ao abrir: '+err.message)}
+e.target.value='';
+};
 $('stl').onclick=()=>{if(!pieces.length){setStatus('Crie uma peça antes de exportar.');return}scene.updateMatrixWorld(true);const group=new THREE.Group();for(const o of pieces){const copy=new THREE.Mesh(o.geometry.clone(),o.material);copy.applyMatrix4(o.matrixWorld);group.add(copy)}const stl=new STLExporter().parse(group,{binary:true});download('solid3d.stl',stl,'model/stl');group.children.forEach(o=>o.geometry.dispose());setStatus('STL exportado. Confira o modelo no fatiador antes de imprimir.')};
 function resize(){const v=$('view');renderer.setSize(v.clientWidth,v.clientHeight,false);camera.aspect=v.clientWidth/Math.max(v.clientHeight,1);camera.updateProjectionMatrix()}new ResizeObserver(resize).observe($('view'));function loop(){requestAnimationFrame(loop);orbit.update();if(cutSeams.children.length)refreshCutSeams();if(chosen){selectionBox.setFromObject(chosen);selectionBox.visible=true;if(faceHighlight){faceHighlight.position.copy(chosen.position);faceHighlight.rotation.copy(chosen.rotation);faceHighlight.scale.copy(chosen.scale)}}renderer.render(scene,camera)}resize();calc();mode('select');loop();
 </script><script>
