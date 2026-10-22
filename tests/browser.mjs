@@ -72,7 +72,9 @@ console.log('PASS binary STL structure, triangles:',triangles);
 async function clearScene(){page.once('dialog',d=>d.accept());await page.locator('#removeAll').click();assert.equal(await page.locator('#objectList option').count(),0)}
 await clearScene();
 await page.locator('#box').click();
+await page.locator('#toggleTools').click(); // close overlay before clicking a viewport button
 await page.locator('[data-view="top"]').click();
+await page.locator('#toggleTools').click();
 await page.locator('[data-activate-tool="split"]').click();
 const area=await page.locator('#scene').boundingBox(),mx=area.x+area.width*.5,my=area.y+area.height*.5;
 await page.mouse.move(mx-45,my);await page.mouse.down();await page.mouse.move(mx+45,my,{steps:10});await page.mouse.up();
