@@ -147,6 +147,30 @@ assert.equal(await page.locator('#objectList option').count(),1);
 console.log('PASS Boolean:',label)
 }
 
+
+await clearScene();
+await page.locator('#box').click();
+await page.locator('#wall').fill('2');
+await page.locator('#cavityDepth').fill('10');
+await page.locator('#makeCavity').click();
+assert.match(await page.locator('#status').innerText(),/Cavidade criada/);
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.equal(data.objects[0].cavity.depth,10);
+await page.locator('#removeCavity').click();
+await page.locator('#edgeSize').fill('2');
+await page.locator('#applyEdge').click();
+assert.match(await page.locator('#status').innerText(),/Acabamento geométrico aplicado/);
+console.log('PASS cavity, removal and edge rounding');
+await page.locator('[data-activate-tool="face"]').click();
+await page.mouse.click(mx,my);
+assert.match(await page.locator('#faceInfo').innerText(),/selecionada/);
+await page.locator('#faceColor').fill('#ff0000');
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.ok(data.objects[0].colors.includes(0xff0000),'Cor de face nao persistida');
+console.log('PASS selecting, painting and saving a face');
+
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
 }catch(e){console.error('BROWSER AUDIT FAILED:',e.message);throw e}finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}
