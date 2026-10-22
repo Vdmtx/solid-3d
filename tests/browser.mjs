@@ -171,6 +171,43 @@ data=JSON.parse(readFileSync(await download.path(),'utf8'));
 assert.ok(data.objects[0].colors.includes(0xff0000),'Cor de face nao persistida');
 console.log('PASS selecting, painting and saving a face');
 
+
+const imagePNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQoAHxcCAk+Uzr4AAAAASUVORK5CYII=','base64');
+await page.locator('#imageFile').setInputFiles({name:'referencia.png',mimeType:'image/png',buffer:imagePNG});
+await page.waitForFunction(()=>document.querySelector('#imageInfo').textContent.includes('Imagem ajustada'),null,{timeout:12000});
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.ok(data.reference.data.startsWith('data:image/png;base64,'),'Imagem referencia ausente no JSON');
+console.log('PASS PNG reference image imported and saved');
+
+for(const shape of ['sphere','cone','torus','prism','pyramid']){
+await clearScene();await page.locator('#'+shape).click();
+assert.equal(await page.locator('#objectList option').count(),1,'Primitive '+shape);
+download=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+const buf=readFileSync(await download.path());
+assert.ok(buf.readUInt32LE(80)>0,'Primitive STL vazio: '+shape);
+console.log('PASS primitive and binary STL:',shape)
+}
+await clearScene();
+await page.locator('#textValue').fill('SOLID');
+await page.locator('#addText').click();
+await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Texto 3D criado'),null,{timeout:30000});
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.equal(data.objects[0].kind,'text');
+assert.equal(data.objects[0].textValue,'SOLID');
+console.log('PASS editable 3D text creation');
+await clearScene();
+await page.locator('#curveStyle').selectOption('smooth');
+await page.locator('[data-activate-tool="bezier"]').click();
+for(const [dx,dy] of [[-40,-30],[40,-30],[40,30],[-40,30]])await page.mouse.click(mx+dx,my+dy);
+await page.locator('#closeCurve').click();
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.equal(data.objects[0].kind,'bezier');
+assert.equal(data.objects[0].curveStyle,'smooth');
+console.log('PASS smooth Bezier profile saved');
+
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
 }catch(e){console.error('BROWSER AUDIT FAILED:',e.message);throw e}finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}
