@@ -82,6 +82,7 @@ const triangles=stl.readUInt32LE(80);
 assert.ok(triangles>0,'STL sem triangulos');
 assert.equal(stl.length,84+triangles*50,'STL binario inconsistente');
 console.log('PASS binary STL structure, triangles:',triangles);console.log('STL TOPOLOGY full-face CSG:',inspectStlTopology(stl));
+assert.match(await page.locator('#stlValidation').innerText(),/sem irregularidades/,'O editor deveria aprovar o STL simples no teste basico');
 
 
 // Validate that derived meshes remain editable after reopening.
@@ -166,7 +167,8 @@ assert.match(result,/Operação concluída/,label+': '+result);
 assert.equal(await page.locator('#objectList option').count(),1);
 console.log('PASS Boolean:',label);
 topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
-console.log('STL TOPOLOGY '+label+':',inspectStlTopology(readFileSync(await topoDownload.path())))
+console.log('STL TOPOLOGY '+label+':',inspectStlTopology(readFileSync(await topoDownload.path())));
+assert.match(await page.locator('#stlValidation').innerText(),/ATENÇÃO/,'CSG '+label+' deve alertar quando ha arestas irregulares')
 }
 
 
