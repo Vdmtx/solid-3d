@@ -267,6 +267,19 @@ console.log('PASS cylinder horizontal cut into two independent volumes');
 topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
 console.log('STL TOPOLOGY divided cylinder:',inspectStlTopology(readFileSync(await topoDownload.path())));
 
+
+await clearScene();
+await page.locator('#cylinder').click();
+await page.locator('[data-view="iso"]').click();
+await page.locator('#toggleTools').click();
+await page.locator('[data-tool="split"]').click();
+const cutRect=await page.locator('#scene').boundingBox();
+const pX=cutRect.x+cutRect.width*.5,pY=cutRect.y+cutRect.height*.5;
+await page.mouse.move(pX-90,pY);await page.mouse.down();await page.mouse.move(pX+90,pY,{steps:14});await page.mouse.up();
+const perspectiveStatus=await page.locator('#status').innerText();
+assert.equal(await page.locator('#objectList option').count(),2,'Arrasto em perspectiva com painel aberto: '+perspectiveStatus);
+console.log('PASS perspective cut cylinder starting outside object with tools panel open');
+await page.locator('#toggleTools').click();
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
 }catch(e){console.error('BROWSER AUDIT FAILED:',e.message);throw e}finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}
