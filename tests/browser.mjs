@@ -294,6 +294,35 @@ await page.waitForFunction(()=>document.querySelector('#status').textContent.inc
 assert.equal(await page.locator('#objectList option').count(),2);
 assert.ok(await page.locator('#status').innerText());
 console.log('PASS persistent cut mark survived JSON saving and reopening');
+await page.locator('#objectList').selectOption('1');
+const beforeRegion=JSON.parse(JSON.stringify(data.objects[1]));
+await page.locator('#regionAxis').selectOption('y+');
+await page.locator('#regionDistance').fill('12');
+await page.locator('#regionStretch').click();
+assert.match(await page.locator('#status').innerText(),/esticada 12 mm/,'Região CSG não foi esticada');
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+const stretched=data.objects[1];
+assert.ok(Math.abs(stretched.h-beforeRegion.h-12)<.05,'Dimensão Y não mudou 12 mm');
+assert.ok(Math.abs(stretched.y-beforeRegion.y-6)<.05,'A extremidade oposta não permaneceu ancorada em Y');
+assert.notDeepEqual(stretched.csgPositions,beforeRegion.csgPositions,'Vértices CSG não mudaram');
+console.log('PASS stretching a cut CSG region 12mm upwards with opposite face anchored');
+await page.locator('#regionAxis').selectOption('x-');
+await page.locator('#regionDistance').fill('7');
+await page.locator('#regionMove').click();
+assert.match(await page.locator('#status').innerText(),/movida 7 mm/);
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.ok(Math.abs(data.objects[1].x-stretched.x+7)<.05,'Deslocamento X negativo falhou');
+assert.deepEqual(data.objects[1].csgPositions,stretched.csgPositions,'Mover não deve modificar a geometria');
+console.log('PASS moving a cut region 7mm left independently of its geometry');
+await page.locator('#undo').click();
+await page.locator('#redo').click();
+await page.locator('#file').setInputFiles({name:'region-edited.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
+await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Projeto aberto'),null,{timeout:10000});
+assert.equal(await page.locator('#objectList option').count(),2);
+console.log('PASS undo/redo and JSON reload after stretch and move cut regions');
+
 
 await page.locator('#toggleTools').click();
 await page.screenshot({path:'audit-browser.png'});
