@@ -68,6 +68,25 @@ assert.ok(triangles>0,'STL sem triangulos');
 assert.equal(stl.length,84+triangles*50,'STL binario inconsistente');
 console.log('PASS binary STL structure, triangles:',triangles);
 
+
+// Validate that derived meshes remain editable after reopening.
+await page.locator('#objectList').selectOption('0');
+await page.locator('#duplicate').click();
+assert.equal(await page.locator('#objectList option').count(),2);
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+let copyProject=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.equal(copyProject.objects[1].kind,'csg');
+assert.deepEqual(copyProject.objects[0].csgPositions,copyProject.objects[1].csgPositions);
+console.log('PASS duplicate boolean mesh with its geometry');
+const beforeWidth=Number(copyProject.objects[1].w);
+await page.locator('#width').fill(String(beforeWidth+10));
+await page.locator('#width').press('Tab');
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+copyProject=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.ok(Math.abs(copyProject.objects[1].w-(beforeWidth+10))<.01);
+assert.notDeepEqual(copyProject.objects[0].csgPositions,copyProject.objects[1].csgPositions);
+console.log('PASS scaling a derived boolean mesh updates its geometry');
+
 // Additional modeling regression checks.
 async function clearScene(){page.once('dialog',d=>d.accept());await page.locator('#removeAll').click();assert.equal(await page.locator('#objectList option').count(),0)}
 await clearScene();
