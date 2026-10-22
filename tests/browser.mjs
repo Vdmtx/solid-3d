@@ -67,6 +67,65 @@ const triangles=stl.readUInt32LE(80);
 assert.ok(triangles>0,'STL sem triangulos');
 assert.equal(stl.length,84+triangles*50,'STL binario inconsistente');
 console.log('PASS binary STL structure, triangles:',triangles);
+
+// Additional modeling regression checks.
+async function clearScene(){page.once('dialog',d=>d.accept());await page.locator('#removeAll').click();assert.equal(await page.locator('#objectList option').count(),0)}
+await clearScene();
+await page.locator('#box').click();
+await page.locator('[data-view="top"]').click();
+await page.locator('[data-activate-tool="split"]').click();
+const area=await page.locator('#scene').boundingBox(),mx=area.x+area.width*.5,my=area.y+area.height*.5;
+await page.mouse.move(mx-45,my);await page.mouse.down();await page.mouse.move(mx+45,my,{steps:10});await page.mouse.up();
+assert.equal(await page.locator('#objectList option').count(),2,'Primeiro corte de face falhou');
+console.log('PASS primeira subdivisao da face superior');
+let secondCut=false;
+for(const oy of [-24,24]){
+await page.mouse.move(mx-38,my+oy);await page.mouse.down();await page.mouse.move(mx+38,my+oy,{steps:8});await page.mouse.up();
+if(await page.locator('#objectList option').count()===3){secondCut=true;break}
+}
+assert.ok(secondCut,'Nao foi possivel dividir uma regiao pela segunda vez');
+console.log('PASS cortes repetidos em regioes separadas');
+await page.locator('#undo').click();assert.equal(await page.locator('#objectList option').count(),2);
+await page.locator('#redo').click();assert.equal(await page.locator('#objectList option').count(),3);
+console.log('PASS undo/redo de subdivisoes');
+
+await clearScene();
+await page.locator('#box').click();
+await page.locator('[data-tool="vertex"]').click();
+await page.mouse.click(mx,my);
+assert.match(await page.locator('#vertexInfo').innerText(),/selecionado/);
+await page.locator('#vertexDy').fill('12');
+await page.locator('#applyVertex').click();
+assert.match(await page.locator('#status').innerText(),/Canto deslocado/);
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.ok(Object.keys(data.objects[0].vertexOffsets||{}).length>0);
+await page.locator('#file').setInputFiles({name:'sloped.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
+await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Projeto aberto'),null,{timeout:10000});
+assert.equal(await page.locator('#objectList option').count(),1);
+console.log('PASS vertex displacement and JSON restoration');
+
+for(const [button,label] of [['booleanUnion','Soldar'],['booleanSubtract','Aparar'],['booleanIntersect','Interseção']]){
+await clearScene();
+await page.locator('#box').click();
+await page.locator('#cylinder').click();
+await page.locator('#height').fill('55');
+await page.locator('#height').press('Tab');
+await page.locator('#objectList').selectOption('0');
+await page.mouse.click(mx,my,{button:'left'});
+await page.locator('#objectList').selectOption('0');
+await page.keyboard.down('Control');
+await page.mouse.click(mx,my);
+await page.keyboard.up('Control');
+const choice=await page.locator('#status').innerText();
+assert.match(choice,/Operação 3D: principal/,label+': nao selecionou a segunda peça via Ctrl+clique: '+choice);
+await page.locator('#'+button).click();
+const result=await page.locator('#status').innerText();
+assert.match(result,/Operação concluída/,label+': '+result);
+assert.equal(await page.locator('#objectList option').count(),1);
+console.log('PASS Boolean:',label)
+}
+
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
 }catch(e){console.error('BROWSER AUDIT FAILED:',e.message);throw e}finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}
