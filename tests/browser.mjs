@@ -324,6 +324,33 @@ assert.equal(await page.locator('#objectList option').count(),2);
 console.log('PASS undo/redo and JSON reload after stretch and move cut regions');
 
 
+
+await clearScene();
+await page.locator('#box').click();
+await page.locator('#toggleTools').click();
+await page.locator('[data-view="front"]').click();
+await page.locator('#toggleTools').click();
+await page.locator('[data-tool="split"]').last().click();
+const sideView=await page.locator('#scene').boundingBox();
+const sx=sideView.x+sideView.width*.5,sy=sideView.y+sideView.height*.5;
+await page.mouse.move(sx-26,sy);await page.mouse.down();
+await page.mouse.move(sx+26,sy,{steps:12});
+assert.equal(await page.locator('#cutScreenGuide').evaluate(el=>getComputedStyle(el).display),'block','Linha lateral nao aparece durante o arrasto');
+await page.mouse.up();
+const sideStatus=await page.locator('#status').innerText();
+assert.equal(await page.locator('#objectList option').count(),2,'Divisão de face lateral não ocorreu: '+sideStatus);
+download=await Promise.all([page.waitForEvent('download'),page.locator('#save').click()]).then(x=>x[0]);
+data=JSON.parse(readFileSync(await download.path(),'utf8'));
+assert.equal(data.objects.length,2);
+assert.ok(data.objects.every(o=>o.kind==='rect'&&o.cutVisual?.sideFace==='z'),'Divisao lateral perdeu geometria ou marcacao');
+assert.ok(Math.abs(data.objects[0].h+data.objects[1].h-25)<.05,'Corte horizontal deve repartir a altura original');
+console.log('PASS horizontal cut on front vertical face yields two independently editable box pieces');
+await page.locator('#objectList').selectOption('1');
+await page.locator('#regionAxis').selectOption('y+');
+await page.locator('#regionDistance').fill('5');
+await page.locator('#regionStretch').click();
+assert.match(await page.locator('#status').innerText(),/esticada 5/);
+console.log('PASS edit upper region after lateral split without changing other half');
 await page.locator('#toggleTools').click();
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
