@@ -17,8 +17,8 @@ jobs:
       - name: Instalar navegador de testes (sem alterar dependencias do site)
         run: |
           npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps chromium
-        timeout-minutes: 8
+          npx playwright install chromium
+        timeout-minutes: 6
       - name: Testar interface e modelagem em Chromium
         run: node tests/browser.mjs
         timeout-minutes: 4
