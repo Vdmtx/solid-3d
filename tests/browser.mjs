@@ -241,6 +241,23 @@ topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl
 console.log('STL TOPOLOGY smooth bezier:',inspectStlTopology(readFileSync(await topoDownload.path())));
 
 
+
+await clearScene();
+await page.locator('#cylinder').click();
+await page.locator('[data-activate-tool="face"]').click();
+await page.mouse.click(mx,my);
+assert.match(await page.locator('#faceInfo').innerText(),/selecionada/);
+await page.locator('#toggleTools').click();
+await page.locator('[data-view="top"]').click();
+await page.locator('#toggleTools').click();
+await page.locator('[data-activate-tool="split"]').click();
+await page.mouse.move(mx-30,my);await page.mouse.down();await page.mouse.move(mx+30,my,{steps:12});await page.mouse.up();
+const statusCylinder=await page.locator('#status').innerText();
+assert.equal(await page.locator('#objectList option').count(),2,'Cilindro nao foi dividido: '+statusCylinder);
+console.log('PASS cylinder horizontal cut into two independent volumes');
+topoDownload=await Promise.all([page.waitForEvent('download'),page.locator('#stl').click()]).then(x=>x[0]);
+console.log('STL TOPOLOGY divided cylinder:',inspectStlTopology(readFileSync(await topoDownload.path())));
+
 await page.screenshot({path:'audit-browser.png'});
 console.log('Browser audit completed. Caveat: no manifold validation.');
 }catch(e){console.error('BROWSER AUDIT FAILED:',e.message);throw e}finally{await browser?.close();await new Promise(resolve=>server.close(resolve))}
