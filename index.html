@@ -397,11 +397,6 @@ function addCutMark(info){
  const {axis,coordinate,y,centerX,centerZ,halfSpan}=info;
  const span=Math.max(.01,halfSpan||0);
  const pts=axis==='x'?[new THREE.Vector3(coordinate,y+.45,centerZ-span),new THREE.Vector3(coordinate,y+.45,centerZ+span)]:[new THREE.Vector3(centerX-span,y+.45,coordinate),new THREE.Vector3(centerX+span,y+.45,coordinate)];
- const dir=pts[1].clone().sub(pts[0]);
- const geom=new THREE.CylinderGeometry(.55,.55,dir.length(),8);
- geom.translate(0,dir.length()/2,0);geom.rotateZ(Math.PI/2);
- // Build as cylinder from midpoint; align its local Y to the requested segment
- geom.dispose();
  const thick=new THREE.TubeGeometry(new THREE.LineCurve3(pts[0],pts[1]),1,.55,8,false);
  const mesh=new THREE.Mesh(thick,new THREE.MeshBasicMaterial({color:0xffdd33,depthTest:false,depthWrite:false}));
  mesh.renderOrder=45;cutSeams.add(mesh);
