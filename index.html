@@ -456,6 +456,7 @@ function updateScreenCutGuide(e){
 }
 function addCutMark(info){
  if(!info||!Number.isFinite(info.coordinate)||!Number.isFinite(info.y))return;
+ if(info.pts?.length===2){const points=info.pts.map(p=>new THREE.Vector3(...p));const mesh=new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(points[0],points[1]),1,.55,8,false),new THREE.MeshBasicMaterial({color:0xffdd33,depthTest:false,depthWrite:false}));mesh.renderOrder=45;cutSeams.add(mesh);return}
  const {axis,coordinate,y,centerX,centerZ,halfSpan}=info;
  const span=Math.max(.01,halfSpan||0);
  const pts=axis==='x'?[new THREE.Vector3(coordinate,y+.45,centerZ-span),new THREE.Vector3(coordinate,y+.45,centerZ+span)]:[new THREE.Vector3(centerX-span,y+.45,coordinate),new THREE.Vector3(centerX+span,y+.45,coordinate)];
@@ -495,16 +496,15 @@ const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new T
 }}
 function showCutGuide(g){
  if(!g||g.type!=='split'){cutGuide.visible=false;cutScreenGuide.style.display='none';return}
- const o=g.target,la=g.start.clone(),lb=g.end.clone();
- const axis=Math.abs(lb.z-la.z)>Math.abs(lb.x-la.x)?'x':'z';
- const value=axis==='x'?(la.x+lb.x)/2:(la.z+lb.z)/2;
- const bounds=new THREE.Box3().setFromObject(o);
- const c=bounds.getCenter(new THREE.Vector3());
- const y=bounds.max.y+.5;
- const margin=1;
- const pts=axis==='x'?[new THREE.Vector3(value,y,bounds.min.z-margin),new THREE.Vector3(value,y,bounds.max.z+margin)]:[new THREE.Vector3(bounds.min.x-margin,y,value),new THREE.Vector3(bounds.max.x+margin,y,value)];
- cutGuide.geometry.dispose();cutGuide.geometry=new THREE.BufferGeometry().setFromPoints(pts);
- cutGuide.visible=true;
+ const o=g.target,axis=splitAxisOfGesture(g.start,g.end,g.faceAxis||'y');
+ const value=(g.start[axis]+g.end[axis])/2;
+ const bounds=new THREE.Box3().setFromObject(o),faceAxis=g.faceAxis||'y',faceSign=g.faceSign||1;
+ const tangent=['x','y','z'].find(t=>t!==faceAxis&&t!==axis);
+ const mid=bounds.getCenter(new THREE.Vector3()),start=mid.clone(),end=mid.clone();
+ start[axis]=end[axis]=value;
+ start[faceAxis]=end[faceAxis]=faceSign>0?bounds.max[faceAxis]+.55:bounds.min[faceAxis]-.55;
+ start[tangent]=bounds.min[tangent]-1;end[tangent]=bounds.max[tangent]+1;
+ cutGuide.geometry.dispose();cutGuide.geometry=new THREE.BufferGeometry().setFromPoints([start,end]);cutGuide.visible=true
 }
 function createCSGPart(geometry,origin,name,color){
 if(geometry.index){const converted=geometry.toNonIndexed();geometry.dispose();geometry=converted}
@@ -517,20 +517,19 @@ const old=restoring;restoring=true;let output;
 try{output=add('csg',size.x,size.y,size.z,center.x,center.z)}finally{restoring=old}
 output.position.copy(center);output.geometry.dispose();output.geometry=geometry;output.userData.csgPositions=Array.from(geometry.getAttribute('position').array);output.userData.name=name;output.material.forEach(m=>m.color.setHex(color));return output
 }
-function splitSolidAlongLine(o,a,b){
-const dx=Math.abs(b.x-a.x),dz=Math.abs(b.z-a.z);
-if(Math.max(dx,dz)<2)return setStatus('Arraste uma linha de corte maior que 2 mm.');
-const axis=dz>dx?'x':'z',coordinate=axis==='x'?(a.x+b.x)/2:(a.z+b.z)/2;
+function splitSolidAlongLine(o,a,b,faceAxis='y',faceSign=1,chosenAxis=null){
+const axis=chosenAxis||splitAxisOfGesture(a,b,faceAxis),coordinate=(a[axis]+b[axis])/2;
+if(a.distanceTo(b)<2)return setStatus('Arraste uma linha de corte maior que 2 mm.');
 o.updateMatrixWorld(true);
 const bounds=new THREE.Box3().setFromObject(o);
 const min=bounds.min[axis],max=bounds.max[axis];
 if(coordinate<min+1||coordinate>max-1)return setStatus('A linha precisa cruzar o interior do sólido, deixando pelo menos 1 mm de cada lado.');
 const padding=4,height=bounds.max.y-bounds.min.y+padding*2;
-const other=axis==='x'?'z':'x',span=bounds.max[other]-bounds.min[other]+padding*2;
+const dims=bounds.getSize(new THREE.Vector3());
 const buildClip=(from,to)=>{
-const w=axis==='x'?to-from:span,depth=axis==='z'?to-from:span;
-const clip=new THREE.Mesh(new THREE.BoxGeometry(w,height,depth),new THREE.MeshStandardMaterial());
-clip.position.set(axis==='x'?(from+to)/2:(bounds.min.x+bounds.max.x)/2,(bounds.min.y+bounds.max.y)/2,axis==='z'?(from+to)/2:(bounds.min.z+bounds.max.z)/2);
+const clipDims={x:dims.x+padding*2,y:height,z:dims.z+padding*2};clipDims[axis]=to-from;
+const clip=new THREE.Mesh(new THREE.BoxGeometry(clipDims.x,clipDims.y,clipDims.z),new THREE.MeshStandardMaterial());
+clip.position.copy(bounds.getCenter(new THREE.Vector3()));clip.position[axis]=(from+to)/2;
 clip.updateMatrix();return clip
 };
 const clips=[buildClip(min-padding,coordinate),buildClip(coordinate,max+padding)];
@@ -550,14 +549,60 @@ if(o.userData.kind==='circle'){
  halfSpan=Math.sqrt(Math.max(.0001,radius*radius-offset*offset));
 }
 const center=bounds.getCenter(new THREE.Vector3());
-const mark={id:'split-'+Date.now()+'-'+seq,axis,coordinate,y:bounds.max.y,centerX:center.x,centerZ:center.z,halfSpan};
+const mark=faceAxis!=='y'?makeSideCutMark(o,bounds,faceAxis,faceSign,axis,coordinate):{id:'split-'+Date.now()+'-'+seq,axis,coordinate,y:bounds.max.y,centerX:center.x,centerZ:center.z,halfSpan};
 for(const p of parts)p.userData.cutVisual=mark;
 choose(parts[1]);mode('split');refreshCutSeams();calc();
 setStatus('Sólido dividido em duas malhas independentes. Atenção: confira a integridade do STL no diagnóstico de exportação.')
 }catch(err){console.error('Corte 3D:',err);for(const geo of temporary)if(geo&&geo!==pieces.find(p=>p.geometry===geo)?.geometry)geo.dispose();setStatus('Não foi possível dividir este sólido: '+(err.message||err))}
 finally{for(const clip of clips){clip.geometry.dispose();clip.material.dispose()}}
 }
-function splitBoxAlongLine(o,a,b){
+function splitSideAlongLine(o,a,b,faceAxis='z',faceSign=1){
+ const axis=splitAxisOfGesture(a,b,faceAxis);
+ const coordinate=(a[axis]+b[axis])/2;
+ const box=new THREE.Box3().setFromObject(o);
+ const along=['x','y','z'].find(t=>t!==faceAxis&&t!==axis);
+ const extent=box.max[axis]-box.min[axis];
+ if(Math.abs(b[along]-a[along])<Math.max(2,(box.max[along]-box.min[along])*.20)){
+  setStatus('Linha curta para dividir: arraste atravessando a face lateral.');return
+ }
+ if(coordinate<=box.min[axis]+1||coordinate>=box.max[axis]-1){
+  setStatus('A linha precisa cruzar o interior da face, distante das bordas.');return
+ }
+ const d=o.userData;
+ if(d.kind==='rect'&&!d.cavity&&!d.edge&&!Object.keys(d.vertexOffsets||{}).length){
+  history();
+  const lower=coordinate-box.min[axis],upper=box.max[axis]-coordinate;
+  const baseName=d.name,color=o.material[0].color.getHex();
+  const originals={w:d.w,h:d.h,d:d.d};
+  const center=o.position.clone();
+  pieces=pieces.filter(p=>p!==o);scene.remove(o);o.geometry.dispose();o.material.forEach(m=>m.dispose());chosen=null;faceIndex=-1;
+  const parts=[];const was=restoring;restoring=true;
+  try{
+   for(const [length,middle] of [[lower,(box.min[axis]+coordinate)/2],[upper,(coordinate+box.max[axis])/2]]){
+    const dims={...originals};dims[{x:'w',y:'h',z:'d'}[axis]]=length;
+    const p=add('rect',dims.w,dims.h,dims.d,center.x,center.z);
+    p.position.copy(center);p.position[axis]=middle;
+    p.userData.name=baseName+' · região '+(parts.length+1);
+    p.material.forEach(mat=>mat.color.setHex(color));parts.push(p)
+   }
+  }finally{restoring=was}
+  const mark=makeSideCutMark(o,box,faceAxis,faceSign,axis,coordinate);
+  for(const p of parts)p.userData.cutVisual=mark;
+  choose(parts[1]);mode('split');refreshCutSeams();calc();
+  setStatus('Face lateral dividida em duas regiões independentes. Selecione cada região para editar.');return
+ }
+ splitSolidAlongLine(o,a,b,faceAxis,faceSign,axis)
+}
+function makeSideCutMark(o,box,faceAxis,faceSign,axis,coordinate){
+ const tangent=['x','y','z'].find(t=>t!==faceAxis&&t!==axis),center=box.getCenter(new THREE.Vector3());
+ const point1=center.clone(),point2=center.clone();
+ point1[faceAxis]=point2[faceAxis]=faceSign>0?box.max[faceAxis]+.45:box.min[faceAxis]-.45;
+ point1[axis]=point2[axis]=coordinate;
+ point1[tangent]=box.min[tangent];point2[tangent]=box.max[tangent];
+ return {id:'split-'+Date.now()+'-'+seq,pts:[point1.toArray(),point2.toArray()],axis,coordinate,sideFace:faceAxis}
+}
+function splitBoxAlongLine(o,a,b,faceAxis='y',faceSign=1){
+if(faceAxis!=='y')return splitSideAlongLine(o,a,b,faceAxis,faceSign);
 const d=o.userData;if(d.kind!=='rect'||d.cavity||d.edge>0||Object.keys(d.vertexOffsets||{}).length)return splitSolidAlongLine(o,a,b);if(d.kind!=='rect'||d.cavity||d.edge>0||Object.keys(d.vertexOffsets||{}).length)return setStatus('Divisão disponível para caixas retas, sem inclinação, cavidade nem acabamento.');
 const localA=a.clone().sub(o.position),localB=b.clone().sub(o.position),dx=Math.abs(localB.x-localA.x),dz=Math.abs(localB.z-localA.z);
 if(Math.max(dx,dz)<2)return setStatus('Trace uma linha mais longa sobre a face.');
@@ -572,17 +617,34 @@ const dims=axis==='x'?[[left,d.d,x-extent/2+left/2,z],[right,d.d,x+cut+right/2,z
 const parts=[];const wasRestoring=restoring;restoring=true;for(const [w,depth,px,pz] of dims){const p=add('rect',w,d.h,depth,px,pz);for(const m of p.material)m.color.setHex(oldColor);parts.push(p)}
 restoring=wasRestoring;for(const p of parts){p.userData.cutGroup=cutGroup;p.userData.cutAxis=axis}refreshCutSeams();parts[0].userData.name=base+' · região 1';parts[1].userData.name=base+' · região 2';choose(parts[1]);mode('split');setStatus('Região dividida. Continue cortando qualquer face superior com a tesoura; use Empurrar/Puxar quando quiser elevar uma região.');calc()
 }
-function splitPointer(e,preferred=null){
+function splitPointer(e,preferred=null,planeInfo=null){
  hit(e);
  const intersect=ray.intersectObjects(pieces,false)[0];
- const object=intersect?.object||preferred||chosen;
+ const object=planeInfo?.object||intersect?.object||preferred||chosen;
  if(!object||!pieces.includes(object))return null;
  object.updateMatrixWorld(true);
  const box=new THREE.Box3().setFromObject(object);
- const point=ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-box.max.y),new THREE.Vector3());
- return point?{object,point,box,hit:intersect}:null
+ let normal,origin,faceAxis='y',faceSign=1;
+ if(planeInfo){normal=planeInfo.normal;origin=planeInfo.origin;faceAxis=planeInfo.faceAxis;faceSign=planeInfo.faceSign}
+ else if(intersect&&intersect.object===object&&intersect.face){
+   normal=intersect.face.normal.clone().transformDirection(object.matrixWorld);
+   faceAxis=['x','y','z'].reduce((best,axis)=>Math.abs(normal[axis])>Math.abs(normal[best])?axis:best,'x');
+   faceSign=normal[faceAxis]>=0?1:-1;
+   // Use an axis-aligned plane corresponding to the clicked surface.
+   normal=new THREE.Vector3(faceAxis==='x'?faceSign:0,faceAxis==='y'?faceSign:0,faceAxis==='z'?faceSign:0);
+   origin=intersect.point.clone()
+ }else{
+   normal=new THREE.Vector3(0,1,0);origin=new THREE.Vector3(0,box.max.y,0)
+ }
+ const surface=new THREE.Plane().setFromNormalAndCoplanarPoint(normal,origin);
+ const point=ray.ray.intersectPlane(surface,new THREE.Vector3());
+ return point?{object,point,box,faceAxis,faceSign,normal,origin}:null
 }
-function topHit(e){const pick=splitPointer(e);return pick?{object:pick.object,point:pick.point}:null}
+function splitAxisOfGesture(a,b,faceAxis='y'){
+ const tangent=['x','y','z'].filter(axis=>axis!==faceAxis);
+ return Math.abs(b[tangent[0]]-a[tangent[0]])>=Math.abs(b[tangent[1]]-a[tangent[1]])?tangent[1]:tangent[0]
+}
+function topHit(e){return splitPointer(e)}
 function selectHitFace(hitFace){
 if(!hitFace?.object)return;
 if(chosen!==hitFace.object)choose(hitFace.object);
@@ -602,17 +664,17 @@ renderer.domElement.addEventListener('pointerdown',e=>{if(e.button===0&&(tool===
  hoverFace.visible=false;const h=topHit(e);
  if(!h){setStatus('Selecione um sólido e trace a linha de corte. Você também pode começar o arrasto fora da peça.');return}
  if(chosen!==h.object)choose(h.object);
- gesture={type:'split',target:h.object,start:h.point.clone(),end:h.point.clone(),screenStart:{x:e.clientX,y:e.clientY}};
+ gesture={type:'split',target:h.object,start:h.point.clone(),end:h.point.clone(),faceAxis:h.faceAxis||'y',faceSign:h.faceSign||1,planeInfo:{object:h.object,normal:h.normal||new THREE.Vector3(0,1,0),origin:h.origin||h.point.clone(),faceAxis:h.faceAxis||'y',faceSign:h.faceSign||1},screenStart:{x:e.clientX,y:e.clientY}};
  renderer.domElement.setPointerCapture(e.pointerId);
  setStatus('Corte iniciado. Arraste uma linha transversal, inclusive começando fora da peça.');return
 }if(tool==='bezier'){const p=ground(e);if(p){if(curveNodes.length>=3&&p.distanceTo(curveNodes[0])<Math.max(3,camera.position.distanceTo(orbit.target)*.018)){$('closeCurve').click();return}curveNodes.push(p);updateCurveGuide();setStatus(curveNodes.length+' nós. Clique no primeiro nó para fechar, ou use Fechar curva e extrudir.')}return}if(tool==='push'){const hits=ray.intersectObjects(pieces);const target=hits[0]?.object||(['text','text2d'].includes(chosen?.userData.kind)?chosen:null);if(!target){setStatus('Selecione um objeto ou texto para extrudir.');return}if(target.userData.kind==='csg'){setStatus('Empurrar/Puxar livre ainda não suporta malhas booleanas. As dimensões podem ser ajustadas no painel de propriedades.');return}choose(target);history();gesture={type:'push',startY:e.clientY,startH:target.userData.kind==='text2d'?.15:target.userData.h,target,started2d:target.userData.kind==='text2d'};renderer.domElement.setPointerCapture(e.pointerId);setStatus('Arraste para cima ou para baixo para ajustar a extrusão em milímetros.');return}const p=ground(e);if(!p)return;gesture={type:'draw',start:p,end:p.clone()};renderer.domElement.setPointerCapture(e.pointerId)});
 renderer.domElement.addEventListener('pointermove',e=>{if(handDrag&&e.pointerId===handDrag.id){const dx=e.clientX-handDrag.x,dy=e.clientY-handDrag.y;handDrag.x=e.clientX;handDrag.y=e.clientY;const distance=camera.position.distanceTo(orbit.target),height=renderer.domElement.clientHeight||1,units=2*distance*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/height;const right=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),up=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1);const delta=right.multiplyScalar(-dx*units).add(up.multiplyScalar(dy*units));camera.position.add(delta);orbit.target.add(delta);camera.updateMatrixWorld();orbit.update();e.preventDefault();return}if(!gesture){highlightSplitFace(e);return}hoverFace.visible=false;if(gesture.type==='split'){
  updateScreenCutGuide(e);
- const pick=splitPointer(e,gesture.target);
+ const pick=splitPointer(e,gesture.target,gesture.planeInfo);
  if(pick){gesture.end=pick.point;showCutGuide(gesture);setStatus('Linha amarela: prévia do corte. Solte o mouse para confirmar.')}
  return
 }if(gesture.type==='push'){const target=gesture.target;if(!target)return;const h=Math.max(.15,gesture.startH+(gesture.startY-e.clientY)*.35);if(gesture.started2d&&h>.15)target.userData.kind='text';target.userData.h=h;resizeObj(target);setStatus('Extrusão: '+h.toFixed(2)+' mm. Solte para confirmar.');return}const p=ground(e);if(p){gesture.end=p;showPreview(gesture.start,p)}});
-function finish(){if(!gesture)return;if(gesture.type==='split'){const g=gesture;gesture=null;cutGuide.visible=false;cutScreenGuide.style.display='none';splitBoxAlongLine(g.target,g.start,g.end);return}if(gesture.type==='push'){const d=gesture.target?.userData;if(d){if(gesture.started2d&&d.h<=.15)d.kind='text2d';setStatus('Extrusão concluída: '+d.h.toFixed(2)+' mm. Use Ctrl+Z para desfazer.');refreshObjectList()}}if(gesture.type==='draw'){const a=gesture.start,b=gesture.end,w=Math.abs(a.x-b.x),d=Math.abs(a.z-b.z);if(w>1&&d>1){const diameter=Math.max(w,d);const circle=tool==='circle';add(circle?'circle':'rect',circle?diameter:w,1,circle?diameter:d,(a.x+b.x)/2,(a.z+b.z)/2);setStatus('Perfil criado. Selecione Empurrar/Puxar (E) e arraste ou informe Altura (mm).')}}disposePreview();gesture=null}
+function finish(){if(!gesture)return;if(gesture.type==='split'){const g=gesture;gesture=null;cutGuide.visible=false;cutScreenGuide.style.display='none';splitBoxAlongLine(g.target,g.start,g.end,g.faceAxis,g.faceSign);return}if(gesture.type==='push'){const d=gesture.target?.userData;if(d){if(gesture.started2d&&d.h<=.15)d.kind='text2d';setStatus('Extrusão concluída: '+d.h.toFixed(2)+' mm. Use Ctrl+Z para desfazer.');refreshObjectList()}}if(gesture.type==='draw'){const a=gesture.start,b=gesture.end,w=Math.abs(a.x-b.x),d=Math.abs(a.z-b.z);if(w>1&&d>1){const diameter=Math.max(w,d);const circle=tool==='circle';add(circle?'circle':'rect',circle?diameter:w,1,circle?diameter:d,(a.x+b.x)/2,(a.z+b.z)/2);setStatus('Perfil criado. Selecione Empurrar/Puxar (E) e arraste ou informe Altura (mm).')}}disposePreview();gesture=null}
 renderer.domElement.addEventListener('pointerup',e=>{if(handDrag&&e.pointerId===handDrag.id){handDrag=null;updateOrbit();renderer.domElement.style.cursor=tool==='pan'?'grab':'auto';return}renderer.domElement.style.cursor=tool==='pan'?'grab':'auto';finish();if(e.button===1){middleHeld=false;updateOrbit()}});renderer.domElement.addEventListener('pointercancel',()=>{cutGuide.visible=false;cutScreenGuide.style.display='none';handDrag=null;updateOrbit();gesture=null;disposePreview();middleHeld=false;updateOrbit()});renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());renderer.domElement.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault()});window.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();redo();return}if(e.key.toLowerCase()==='r'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){rHeld=true;updateOrbit();e.preventDefault();return}if(e.key.toLowerCase()==='h'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){mode('pan');e.preventDefault();return}if(e.code==='Space'){if(!spaceHeld){spaceHeld=true;updateOrbit();renderer.domElement.style.cursor='grab'}e.preventDefault();return}if(e.key.toLowerCase()==='e')mode('push');if(e.key==='Escape')mode('select');if(e.key==='Enter'&&tool==='bezier')$('closeCurve').click();if((e.key==='Delete'||e.key==='Backspace')&&chosen){e.preventDefault();$('remove').click()}});window.addEventListener('keyup',e=>{if(e.key.toLowerCase()==='r'){rHeld=false;updateOrbit()}if(e.code==='Space'){spaceHeld=false;updateOrbit();renderer.domElement.style.cursor=tool==='pan'?'grab':'auto'}});window.addEventListener('blur',()=>{handDrag=null;rHeld=false;middleHeld=false;spaceHeld=false;updateOrbit()});
 for(const [id,k] of [['width','w'],['height','h'],['depth','d']])$(id).addEventListener('change',()=>{if(!chosen)return;const n=Number($(id).value);if(!(n>.1))return;history();const d=chosen.userData;if(d.kind==='csg'&&Array.isArray(d.csgPositions)){const old=d[k],axis={w:0,h:1,d:2}[k],factor=n/old;for(let i=axis;i<d.csgPositions.length;i+=3)d.csgPositions[i]*=factor}d[k]=n;if(d.kind==='circle'&&k==='w')d.d=n;resizeObj(chosen)});
 $('makeCavity').onclick=()=>{if(!chosen)return setStatus('Selecione uma peça.');const d=chosen.userData,t=Number($('wall').value),dep=Number($('cavityDepth').value),maxWall=Math.min(d.w,d.kind==='circle'?d.w:d.d)/2;if(!['rect','circle'].includes(d.kind)||Object.keys(d.vertexOffsets||{}).length)return setStatus('Cavidade disponível para caixas e cilindros sem vértices inclinados.');if(!Number.isFinite(t)||t<.4||t>=maxWall||!Number.isFinite(dep)||dep<=0||dep>=d.h)return setStatus('Medidas inválidas: parede de 0,4 mm até menos de metade da largura; profundidade menor que a altura.');history();d.cavity={wall:t,depth:dep};resizeObj(chosen);setStatus('Cavidade criada com parede '+t+' mm e profundidade '+dep+' mm; incluída no STL.')};$('removeCavity').onclick=()=>{if(!chosen||!chosen.userData.cavity)return;history();chosen.userData.cavity=null;resizeObj(chosen);setStatus('Peça voltou a ser maciça.')};$('applyEdge').onclick=()=>{if(!chosen){setStatus('Selecione uma peça para aplicar acabamento.');return}const d=chosen.userData,n=Number($('edgeSize').value),limit=Math.min(d.w,d.h,d.kind==='circle'?d.w:d.d)/2-.001;if(d.cavity||Object.keys(d.vertexOffsets||{}).length)return setStatus('Remova a cavidade ou deformação dos vértices antes de aplicar acabamento.');if(['sphere','cone','prism','pyramid','torus','textOutline','csg'].includes(d.kind))return setStatus('Este tipo de peça ainda não possui chanfro/arredondamento geométrico. Use caixa, cilindro, texto 3D ou perfil Bézier.');if(!Number.isFinite(n)||n<0||n>limit){setStatus('Acabamento não aplicado: a peça permite no máximo '+Math.max(0,limit).toFixed(2)+' mm. Reduza a medida ou aumente a espessura do sólido.');$('edgeSize').value=Math.max(0,limit).toFixed(2);$('edgeSize').focus();return}history();d.edge=n;d.edgeType=$('edgeType').value;d.edgeSegments=Math.max(2,Math.min(24,Math.round(Number($('edgeSegments').value)||8)));resizeObj(chosen);setStatus('Acabamento geométrico aplicado: '+d.edgeType+' de '+n.toFixed(2)+' mm. Será incluído no STL.')};
