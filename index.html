@@ -241,7 +241,12 @@ function refreshObjectList(){const list=$('objectList');if(!list)return;list.inn
 function extrudeSelectedFace(){
 const o=chosen,d=o?.userData,idx=faceIndex,amount=Number($('faceExtrudeAmount').value);
 if(!o||idx<0){setStatus('Selecione uma face com a ferramenta Selecionar face antes de extrudir.');return}
-if(d.kind!=='rect'||d.edge>0||d.cavity||Object.keys(d.vertexOffsets||{}).length){setStatus('Extrusão de face inteira disponível apenas em caixas simples, sem inclinações, arredondamentos ou cavidades.');return}
+if(['circle','prism'].includes(d.kind)&&!d.cavity&&d.edge===0&&(idx===1||idx===2)){
+if(!Number.isFinite(amount)||amount<.1||amount>256)return setStatus('Informe uma extrusão entre 0,1 e 256 mm.');
+history();const y=o.position.y;d.h+=amount;resizeObj(o);o.position.y=y+(idx===1?amount/2:-amount/2);
+showSelection();calc();setStatus('Face plana '+(idx===1?'superior':'inferior')+' extrudida '+amount.toFixed(2)+' mm em '+d.name+'.');return
+}
+if(d.kind!=='rect'||d.edge>0||d.cavity||Object.keys(d.vertexOffsets||{}).length){setStatus('Extrusão de face inteira disponível para caixas simples e tampas planas de cilindros/prismas. Outras faces exigem operações geométricas adicionais.');return}
 if(!Number.isFinite(amount)||amount<.1||amount>256){setStatus('Informe uma extrusão entre 0,1 e 256 mm.');return}
 if(idx<0||idx>5){setStatus('Selecione uma das seis faces planas da caixa.');return}
 const w=d.w,h=d.h,depth=d.d,dim=[amount,amount,w,w,w,w],height=[h,h,amount,amount,h,h],zdim=[depth,depth,depth,depth,amount,amount];
